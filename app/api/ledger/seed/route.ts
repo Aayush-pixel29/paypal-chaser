@@ -21,7 +21,7 @@ export async function POST() {
     // 2. Define realistic sample clients using findOrCreateClient
     const client1Id = await findOrCreateClient({
       name: "Acme Global Robotics",
-      email: "jane.doe.us@example.com",
+      email: "sb-lfyee53530704@personal.example.com",
     });
 
     const client2Id = await findOrCreateClient({
@@ -142,7 +142,7 @@ export async function POST() {
       },
       {
         id: randomUUID(),
-        action_proposed: "SEND_INVOICE INV2-72AT-G5P8-GL4K-8FLQ | USD 3750.00 → jane.doe.us@example.com",
+        action_proposed: "SEND_INVOICE INV2-72AT-G5P8-GL4K-8FLQ | USD 3750.00 → sb-lfyee53530704@personal.example.com",
         approved: false,
       },
     ];

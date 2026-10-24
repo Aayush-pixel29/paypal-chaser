@@ -12,7 +12,7 @@ import { SecurityArchitectureModal } from "../dashboard/SecurityArchitectureModa
 const SAMPLES = [
   {
     label: "Web redesign SOW (US Client)",
-    text: `Scope of work for Acme Global Robotics (billing contact: Jane Doe, jane.doe.us@example.com, 100 Montgomery St, San Francisco, CA 94104 US)
+    text: `Scope of work for Acme Global Robotics (billing contact: Jane Doe, sb-lfyee53530704@personal.example.com, 100 Montgomery St, San Francisco, CA 94104 US)
 - Landing page redesign: 24 hours @ $85/hr
 - Design system in Figma: flat fee $1,200
 - 2 rounds of revisions: 6 hours @ $85/hr
