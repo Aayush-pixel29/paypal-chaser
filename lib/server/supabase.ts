@@ -23,9 +23,9 @@ export function getSupabase(): SupabaseClient {
  * (e.g., migration schema_v2.sql not yet executed), it automatically strips the missing
  * column and retries, ensuring zero downtime and zero 500 errors.
  */
-export async function resilientInsert(table: string, payload: Record<string, unknown>) {
+export async function resilientInsert(table: string, payload: object) {
   const db = getSupabase();
-  const currentPayload = { ...payload };
+  const currentPayload: Record<string, unknown> = { ...payload };
   for (let i = 0; i < 6; i++) {
     const { data, error } = await db.from(table).insert(currentPayload).select();
     if (!error) return { data, error: null };
@@ -44,12 +44,12 @@ export async function resilientInsert(table: string, payload: Record<string, unk
  */
 export async function resilientUpdate(
   table: string,
-  payload: Record<string, unknown>,
+  payload: object,
   matchColumn: string,
   matchValue: unknown
 ) {
   const db = getSupabase();
-  const currentPayload = { ...payload };
+  const currentPayload: Record<string, unknown> = { ...payload };
   for (let i = 0; i < 6; i++) {
     const { data, error } = await db
       .from(table)
