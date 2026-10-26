@@ -11,9 +11,10 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  let paypalInvoiceId = "";
   try {
     const { id } = await params;
-    const paypalInvoiceId = id;
+    paypalInvoiceId = id;
 
     if (!paypalInvoiceId) {
       return Response.json({ error: "Missing invoice ID" }, { status: 400 });
@@ -42,6 +43,8 @@ export async function POST(
     await logWebhookEvent(
       `REMINDER_SENT ${paypalInvoiceId} | Escalated reminder dispatched to client via PayPal API`,
       true,
+      paypalInvoiceId,
+      "HUMAN_OPERATOR",
     );
 
     return Response.json({
@@ -53,6 +56,9 @@ export async function POST(
   } catch (err) {
     const errorMsg = (err as Error).message || "";
     console.error("[chaser] Remind failed:", errorMsg);
+    if (errorMsg.includes("RESOURCE_NOT_FOUND") || errorMsg.includes("not found in ledger")) {
+      return Response.json({ error: `Invoice ${paypalInvoiceId} not found in PayPal or ledger` }, { status: 404 });
+    }
     return Response.json({ error: errorMsg }, { status: 500 });
   }
 }

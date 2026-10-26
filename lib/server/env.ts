@@ -42,6 +42,12 @@ export const env = {
     get anonKey() {
       return required("NEXT_PUBLIC_SUPABASE_ANON_KEY");
     },
+    get serviceRoleKey() {
+      return process.env.SUPABASE_SERVICE_ROLE_KEY || this.anonKey;
+    },
+    get hasServiceRoleKey() {
+      return Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+    },
   },
   ai: {
     get geminiModel() {

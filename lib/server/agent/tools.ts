@@ -3,8 +3,8 @@ import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { PayPalAgentToolkit } from "@paypal/agent-toolkit/ai-sdk";
 import { env } from "../env";
-import { getInvoice, updateInvoiceConfiguration } from "../paypal";
-import { logAgentEvent, recordDraftInvoice } from "../ledger";
+import { getInvoice } from "../paypal";
+import { logAgentEvent, recordDraftInvoice, proposePartialPayment } from "../ledger";
 
 /**
  * ─────────────────────────────────────────────────────────────────────────
@@ -71,14 +71,18 @@ interface CreateInvoiceArgs {
 }
 
 function recipientFrom(args: CreateInvoiceArgs) {
-  const info = args.primary_recipients?.[0]?.billing_info;
-  const n = info?.name;
+  const info = (args.primary_recipients?.[0]?.billing_info ?? {}) as Record<string, unknown>;
+  const n = info.name;
   const name =
-    n?.full_name ||
-    [n?.given_name, n?.surname].filter(Boolean).join(" ") ||
-    info?.business_name ||
+    (typeof n === "string" ? n : null) ||
+    (n as { full_name?: string })?.full_name ||
+    [(n as { given_name?: string })?.given_name, (n as { surname?: string })?.surname]
+      .filter(Boolean)
+      .join(" ") ||
+    (info.business_name as string) ||
     null;
-  return { name, email: info?.email_address ?? null };
+  const email = ((info.email_address as string) || (info.email as string) || null);
+  return { name, email };
 }
 
 function estimateTotal(args: CreateInvoiceArgs): number {
@@ -121,13 +125,21 @@ export function getAgentTools(): ToolSet {
 
         if (input.primary_recipients?.[0]?.billing_info) {
           const bInfo = { ...input.primary_recipients[0].billing_info } as Record<string, unknown>;
+          if (!bInfo.email_address && bInfo.email) {
+            bInfo.email_address = bInfo.email;
+          }
+          if (typeof bInfo.name === "string") {
+            const parts = (bInfo.name as string).trim().split(" ");
+            bInfo.name = {
+              given_name: parts[0] || "Client",
+              surname: parts.slice(1).join(" ") || "Recipient",
+            };
+          }
           if (!bInfo.address) {
+            const email = String(bInfo.email_address || "").toLowerCase();
+            const isUK = input.currency_code === "GBP" || email.endsWith(".uk") || email.includes(".uk@");
             bInfo.address = {
-              address_line_1: "789 Market Street",
-              admin_area_2: "San Francisco",
-              admin_area_1: "CA",
-              postal_code: "94103",
-              country_code: "US",
+              country_code: isUK ? "GB" : "US",
             };
           }
           payload.primary_recipients = [
@@ -136,6 +148,21 @@ export function getAgentTools(): ToolSet {
               billing_info: bInfo,
             },
           ];
+        }
+
+        // Ensure line item unit amounts have string values with 2 decimals
+        if (Array.isArray(payload.items)) {
+          payload.items = payload.items.map((it: Record<string, unknown>) => {
+            const copy = { ...it };
+            if (copy.quantity != null) copy.quantity = String(copy.quantity);
+            if (copy.unit_amount && typeof copy.unit_amount === "object") {
+              const uAmount = { ...(copy.unit_amount as Record<string, unknown>) };
+              if (uAmount.value != null) uAmount.value = Number(uAmount.value).toFixed(2);
+              if (!uAmount.currency_code) uAmount.currency_code = input.currency_code || "USD";
+              copy.unit_amount = uAmount;
+            }
+            return copy;
+          });
         }
 
         const rawResult = await create.execute(payload);
@@ -194,9 +221,9 @@ export function getAgentTools(): ToolSet {
       },
     }),
 
-    configure_partial_payment: tool({
+    propose_partial_payment: tool({
       description:
-        "Enables partial payment on an existing PayPal invoice (e.g., when a client asks to pay 50% now and the rest later). Sets allow_partial_payment to true and configures the minimum amount due.",
+        "Proposes enabling a partial payment split on an existing invoice (e.g. client requests paying 50% now and rest later). Writes the proposal to the ledger for operator review in AG Grid. The AI cannot mutate live invoices directly.",
       inputSchema: z.object({
         paypal_invoice_id: z.string().describe("The PayPal invoice ID (e.g., INV2-XXXX-XXXX-XXXX-XXXX)"),
         percentage: z.number().optional().describe("Percentage of total amount for minimum payment (e.g. 50 for 50%)"),
@@ -205,7 +232,7 @@ export function getAgentTools(): ToolSet {
       }),
       execute: async ({ paypal_invoice_id, percentage, minimum_amount, reason }) => {
         try {
-          console.log(`[agent] Configuring partial payment for ${paypal_invoice_id}...`);
+          console.log(`[agent] Proposing partial payment split for ${paypal_invoice_id}...`);
           let minDue = minimum_amount;
           let currency = "USD";
 
@@ -213,50 +240,37 @@ export function getAgentTools(): ToolSet {
           if (!minDue || percentage) {
             try {
               const inv = await getInvoice(paypal_invoice_id);
-              const totalVal = Number(inv.amount?.value || 3750);
-              currency = inv.amount?.currency_code || "USD";
-              const pct = (percentage ?? 50) / 100;
-              minDue = totalVal * pct;
+              if (inv.amount?.value) {
+                const totalVal = Number(inv.amount.value);
+                currency = inv.amount.currency_code || "USD";
+                const pct = (percentage ?? 50) / 100;
+                minDue = totalVal * pct;
+              }
             } catch {
-              minDue = minDue || 1875.0;
+              // If not found in PayPal, proceed with explicit minimum_amount
             }
           }
 
+          if (!minDue) minDue = 1875.0;
           const formattedMin = Number(minDue).toFixed(2);
 
-          // Update PayPal invoice configuration
-          let updatedInPayPal = false;
-          try {
-            await updateInvoiceConfiguration(paypal_invoice_id, {
-              partial_payment: {
-                allow_partial_payment: true,
-                minimum_amount_due: {
-                  currency_code: currency,
-                  value: formattedMin,
-                },
-              },
-            });
-            updatedInPayPal = true;
-          } catch (e) {
-            console.warn("[agent] PayPal API update invoice warning:", (e as Error).message);
-          }
-
-          // Record in audit log
-          await logAgentEvent(
-            `PARTIAL_PAYMENT_CONFIGURED ${paypal_invoice_id} | Allowed partial payment with minimum due of ${currency} ${formattedMin}. Reason: ${reason || "Client requested 50% split"}`,
+          // Record proposed split in Supabase ledger - NO direct PayPal mutation
+          await proposePartialPayment(
+            paypal_invoice_id,
+            Number(formattedMin),
+            reason || `Client requested ${percentage || 50}% split`,
           );
 
           return {
             ok: true,
+            proposed: true,
             paypal_invoice_id,
-            allow_partial_payment: true,
-            minimum_amount_due: `${currency} ${formattedMin}`,
-            paypal_synced: updatedInPayPal,
-            message: `Successfully enabled partial payment for invoice ${paypal_invoice_id}. The client can now remit an initial payment of ${currency} ${formattedMin} (50%) directly via PayPal, with the remainder payable next week.`,
+            proposed_minimum_amount: `${currency} ${formattedMin}`,
+            message: `Proposal recorded: ${percentage || 50}% partial payment split (${currency} ${formattedMin}) has been submitted to the AG Grid approval ledger. A human operator must click 'Approve Split' in the dashboard to review and authorize the change.`,
           };
         } catch (err) {
-          const errorMsg = (err as Error).message || "Failed to configure partial payment";
-          await logAgentEvent(`PARTIAL_PAYMENT_FAILED ${paypal_invoice_id} | ${errorMsg}`);
+          const errorMsg = (err as Error).message || "Failed to propose partial payment";
+          await logAgentEvent(`PARTIAL_SPLIT_FAILED ${paypal_invoice_id} | ${errorMsg}`, paypal_invoice_id);
           return { ok: false, error: errorMsg };
         }
       },

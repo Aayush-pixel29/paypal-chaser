@@ -56,10 +56,27 @@ export async function paypalFetch<T = unknown>(
 export interface PayPalInvoice {
   id: string;
   status: string;
-  detail?: { invoice_number?: string; currency_code?: string };
+  detail?: {
+    invoice_number?: string;
+    currency_code?: string;
+    reference?: string;
+    invoice_date?: string;
+    note?: string;
+    term?: string;
+    memo?: string;
+    payment_term?: unknown;
+    recipient_view_url?: string;
+    invoicer_view_url?: string;
+  };
+  invoicer?: unknown;
+  configuration?: Record<string, unknown>;
   amount?: { currency_code: string; value: string };
   primary_recipients?: Array<{
-    billing_info?: { email_address?: string; name?: { given_name?: string; surname?: string; full_name?: string } };
+    billing_info?: {
+      email_address?: string;
+      name?: { given_name?: string; surname?: string; full_name?: string };
+      address?: { country_code?: string; [key: string]: unknown };
+    };
   }>;
   items?: unknown[];
   links?: Array<{ href: string; rel: string; method?: string }>;
@@ -106,6 +123,58 @@ export async function remindInvoice(
   );
 }
 
+export async function createInvoiceDirect(payload: Record<string, unknown>): Promise<{ id: string; href: string }> {
+  const res = await paypalFetch<{ rel: string; href: string; id?: string }>("/v2/invoicing/invoices", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const id = res.id || res.href?.split("/").pop() || "";
+  return { id, href: res.href };
+}
+
+export async function enablePartialPaymentOnPayPal(
+  invoiceId: string,
+  minimumAmount: number,
+  currencyCode = "USD",
+) {
+  const existing = await getInvoice(invoiceId);
+
+  // Strip read-only fields that cause PayPal PUT to fail
+  const cleanPayload = {
+    detail: {
+      invoice_number: existing.detail?.invoice_number,
+      reference: existing.detail?.reference,
+      invoice_date: existing.detail?.invoice_date,
+      currency_code: existing.detail?.currency_code || currencyCode,
+      note: existing.detail?.note,
+      term: existing.detail?.term,
+      memo: existing.detail?.memo,
+      payment_term: existing.detail?.payment_term,
+    },
+    invoicer: existing.invoicer,
+    primary_recipients: existing.primary_recipients,
+    items: existing.items,
+    configuration: {
+      ...(existing.configuration ?? {}),
+      partial_payment: {
+        allow_partial_payment: true,
+        minimum_amount_due: {
+          currency_code: existing.detail?.currency_code || currencyCode,
+          value: minimumAmount.toFixed(2),
+        },
+      },
+    },
+  };
+
+  return paypalFetch<PayPalInvoice>(
+    `/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}?send_to_recipient=true`,
+    {
+      method: "PUT",
+      body: JSON.stringify(cleanPayload),
+    },
+  );
+}
+
 export async function updateInvoiceConfiguration(
   invoiceId: string,
   configuration: {
@@ -118,23 +187,9 @@ export async function updateInvoiceConfiguration(
     };
   },
 ) {
-  // First fetch the existing invoice to preserve detail and items
-  const existing = await getInvoice(invoiceId);
-  const updatedPayload = {
-    ...existing,
-    configuration: {
-      ...(existing as { configuration?: Record<string, unknown> }).configuration,
-      ...configuration,
-    },
-  };
-
-  return paypalFetch<PayPalInvoice>(
-    `/v2/invoicing/invoices/${encodeURIComponent(invoiceId)}`,
-    {
-      method: "PUT",
-      body: JSON.stringify(updatedPayload),
-    },
-  );
+  const minAmount = Number(configuration.partial_payment?.minimum_amount_due?.value || 0);
+  const currency = configuration.partial_payment?.minimum_amount_due?.currency_code || "USD";
+  return enablePartialPaymentOnPayPal(invoiceId, minAmount, currency);
 }
 
 export interface WebhookVerificationParams {

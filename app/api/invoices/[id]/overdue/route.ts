@@ -39,6 +39,9 @@ export async function POST(
   } catch (err) {
     const errorMsg = (err as Error).message || "";
     console.error("[chaser] Overdue simulation failed:", errorMsg);
+    if (errorMsg.includes("not found in ledger")) {
+      return Response.json({ error: errorMsg }, { status: 404 });
+    }
     return Response.json({ error: errorMsg }, { status: 500 });
   }
 }

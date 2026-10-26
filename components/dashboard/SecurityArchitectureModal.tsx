@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ShieldCheck, X } from "lucide-react";
 
 export function SecurityArchitectureModal() {
   const [open, setOpen] = useState(false);
@@ -11,9 +12,10 @@ export function SecurityArchitectureModal() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="glass flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-medium text-ink transition hover:border-accent/60 hover:shadow-lg"
+        className="glass flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium text-ink transition hover:border-accent/60 hover:shadow-lg"
       >
-        <span className="text-accent animate-pulse">🛡️</span> Zero-Trust Architecture
+        <ShieldCheck className="h-4 w-4 text-accent" />
+        <span>Zero-Trust Architecture</span>
       </button>
     );
   }
@@ -42,9 +44,10 @@ export function SecurityArchitectureModal() {
           <button
             type="button"
             onClick={() => setOpen(false)}
-            className="rounded-xl border border-line-strong p-2 text-muted hover:text-white"
+            className="rounded-xl border border-line-strong p-2 text-muted hover:text-white transition"
+            aria-label="Close"
           >
-            ✕
+            <X className="h-4 w-4" />
           </button>
         </div>
 

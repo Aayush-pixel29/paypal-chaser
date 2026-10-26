@@ -1,5 +1,5 @@
 import { sendInvoice } from "@/lib/server/paypal";
-import { logWebhookEvent, markLogApproved, updateInvoiceStatus } from "@/lib/server/ledger";
+import { logWebhookEvent, markLogApproved } from "@/lib/server/ledger";
 
 export const maxDuration = 60;
 
@@ -12,9 +12,10 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  let paypalInvoiceId = "";
   try {
     const { id } = await params;
-    const paypalInvoiceId = id;
+    paypalInvoiceId = id;
 
     if (!paypalInvoiceId) {
       return Response.json({ error: "Missing invoice ID" }, { status: 400 });
@@ -36,7 +37,12 @@ export async function POST(
     });
 
     // Update status in Supabase ledger
-    await updateInvoiceStatus(paypalInvoiceId, "SENT");
+    const payerViewUrl = result?.href || `https://www.sandbox.paypal.com/invoice/p/#${paypalInvoiceId}`;
+    const { getSupabase } = await import("@/lib/server/supabase");
+    await getSupabase()
+      .from("invoices")
+      .update({ status: "SENT", payer_view_url: payerViewUrl })
+      .eq("paypal_invoice_id", paypalInvoiceId);
 
     // Mark the pending proposal as approved
     await markLogApproved(paypalInvoiceId);
@@ -45,17 +51,24 @@ export async function POST(
     await logWebhookEvent(
       `HUMAN_APPROVED ${paypalInvoiceId} | Dispatched to recipient via PayPal API`,
       true,
+      paypalInvoiceId,
+      "HUMAN_OPERATOR",
     );
 
     return Response.json({
       success: true,
       paypal_invoice_id: paypalInvoiceId,
       status: "SENT",
+      payer_view_url: payerViewUrl,
       result,
     });
   } catch (err) {
     const errorMsg = (err as Error).message || "";
     console.error("[approval] Failed to send invoice:", errorMsg);
+
+    if (errorMsg.includes("RESOURCE_NOT_FOUND") || errorMsg.includes("not found in ledger")) {
+      return Response.json({ error: `Invoice ${paypalInvoiceId} not found in PayPal or ledger` }, { status: 404 });
+    }
 
     if (errorMsg.includes("INR_FOREIGN_CURRENCY_BLOCKED")) {
       return Response.json(

@@ -1,0 +1,136 @@
+{
+  "info": {
+    "name": "Chaser — PayPal AI Agent & AG Grid APIs",
+    "description": "Postman test suite for Chaser: Autonomous Accounts Receivable & Zero-Trust Invoicing Workspace.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Reset Demo Ledger (Provision Live PayPal Sandbox Invoices)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-chaser-csrf", "value": "chaser-direct-ui" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/ledger/seed",
+          "host": ["{{base_url}}"],
+          "path": ["api", "ledger", "seed"]
+        },
+        "description": "Programmatically provisions 4 genuine PayPal Sandbox invoices across DRAFT, SENT, OVERDUE, and PAID states."
+      }
+    },
+    {
+      "name": "2. Get Ledger Snapshot",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/ledger",
+          "host": ["{{base_url}}"],
+          "path": ["api", "ledger"]
+        },
+        "description": "Retrieves the synchronized invoice ledger and immutable audit trail for AG Grid."
+      }
+    },
+    {
+      "name": "3. AI Chat Extraction (Gemini 2.5 Flash)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Scope of work for Acme Global Robotics (billing contact: Jane Doe, sb-lfyee53530704@personal.example.com, 100 Montgomery St, San Francisco, CA 94104 US) - Landing page redesign: 24 hours @ $85/hr - Design system in Figma: flat fee $1,200 - 2 rounds of revisions: 6 hours @ $85/hr Currency USD.\"\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/chat",
+          "host": ["{{base_url}}"],
+          "path": ["api", "chat"]
+        },
+        "description": "Extracts billable deliverables via Gemini and stages a live draft invoice in PayPal Sandbox."
+      }
+    },
+    {
+      "name": "4. Human-In-The-Loop Send Invoice",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-chaser-csrf", "value": "chaser-direct-ui" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/invoices/{{paypal_invoice_id}}/send",
+          "host": ["{{base_url}}"],
+          "path": ["api", "invoices", "{{paypal_invoice_id}}", "send"]
+        },
+        "description": "Authorizes and officially dispatches a drafted invoice to client via PayPal API."
+      }
+    },
+    {
+      "name": "5. AI Overdue Escalation & Reminder",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-chaser-csrf", "value": "chaser-direct-ui" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"subject\": \"Payment Overdue: Immediate Remittance Required\",\n  \"note\": \"This is an automated reminder regarding your overdue milestone payment.\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/invoices/{{paypal_invoice_id}}/remind",
+          "host": ["{{base_url}}"],
+          "path": ["api", "invoices", "{{paypal_invoice_id}}", "remind"]
+        },
+        "description": "Dispatches a tone-escalated reminder for overdue invoices via PayPal Invoicing API."
+      }
+    },
+    {
+      "name": "6. Approve Partial Payment Split",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "x-chaser-csrf", "value": "chaser-direct-ui" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"minimum_amount\": 1875.00,\n  \"currency_code\": \"USD\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/invoices/{{paypal_invoice_id}}/partial",
+          "host": ["{{base_url}}"],
+          "path": ["api", "invoices", "{{paypal_invoice_id}}", "partial"]
+        },
+        "description": "Approves an AI-proposed partial payment arrangement, updating PayPal configuration."
+      }
+    },
+    {
+      "name": "7. Security Check: Unsigned Webhook Rejection",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"event_type\": \"PAYMENT.CAPTURE.COMPLETED\",\n  \"resource\": { \"id\": \"INV2-FORGED-ATTACK\" }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/webhooks/paypal",
+          "host": ["{{base_url}}"],
+          "path": ["api", "webhooks", "paypal"]
+        },
+        "description": "Verifies that unauthenticated or forged webhook payloads fail-closed with 401 Unauthorized."
+      }
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000" },
+    { "key": "paypal_invoice_id", "value": "INV2-YDKP-QF8Q-L7NJ-RTNG" }
+  ]
+}

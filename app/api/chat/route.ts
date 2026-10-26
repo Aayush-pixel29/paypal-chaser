@@ -21,12 +21,26 @@ export async function POST(req: Request) {
     );
   }
 
-  const { messages }: { messages: UIMessage[] } = await req.json();
+  const raw = await req.json();
+  const rawMessages: UIMessage[] = raw.messages || [];
+
+  const safeMessages: UIMessage[] = rawMessages.map((m: unknown) => {
+    const msg = m as Record<string, unknown>;
+    if (!msg.parts || !Array.isArray(msg.parts)) {
+      const text = (msg.content as string) || (msg.text as string) || "";
+      return {
+        id: (msg.id as string) || "msg",
+        role: ((msg.role as string) || "user") as "user" | "assistant" | "system",
+        parts: [{ type: "text", text: typeof text === "string" ? text : JSON.stringify(text) }],
+      } as UIMessage;
+    }
+    return msg as unknown as UIMessage;
+  });
 
   const result = streamText({
     model: google(env.ai.geminiModel),
     instructions: buildInstructions(),
-    messages: await convertToModelMessages(messages),
+    messages: await convertToModelMessages(safeMessages),
     tools: getAgentTools(),
     // extract → (maybe) create_invoice → summarise
     stopWhen: isStepCount(4),

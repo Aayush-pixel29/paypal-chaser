@@ -1,5 +1,7 @@
 "use client";
 
+import { FileText } from "lucide-react";
+
 export interface DraftToolPart {
   type: "tool-create_invoice";
   state: "input-streaming" | "input-available" | "output-available" | "output-error" | string;
@@ -42,7 +44,9 @@ export function DraftInvoiceCard({ part }: { part: DraftToolPart }) {
     <div className="animate-fade-up overflow-hidden rounded-2xl border border-line-strong bg-bg-elev/80">
       <div className="flex items-center justify-between border-b border-line px-4 py-3">
         <div className="flex items-center gap-2 text-sm font-medium">
-          <span className="grid h-6 w-6 place-items-center rounded-md bg-accent/20 text-xs text-accent">$</span>
+          <span className="grid h-6 w-6 place-items-center rounded-md bg-accent/20 text-accent">
+            <FileText className="h-3.5 w-3.5" />
+          </span>
           PayPal draft invoice
         </div>
         {pending && <span className="text-xs text-muted">Creating in PayPal…</span>}
